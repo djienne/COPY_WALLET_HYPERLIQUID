@@ -1,0 +1,8 @@
+user_data/tradesv3.sqlite
+user_data/backtest_results
+user_data/logs
+__pycache__
+*.pyc
+.env
+venv/
+.venv/
