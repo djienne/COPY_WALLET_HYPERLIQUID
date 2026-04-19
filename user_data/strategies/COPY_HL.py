@@ -61,25 +61,29 @@ class PositionTracker:
         # Load existing data if available
         self._load_data()
         
-    def _save_positions_history(self) -> None:
-        """Save position history to CSV"""
+    def _append_positions_history(self, new_positions: List[PositionSnapshot]) -> None:
+        """Append new position history to CSV"""
+        if not new_positions:
+            return
+            
         try:
-            with open(self.positions_file, 'w', newline='', encoding='utf-8') as f:
+            file_exists = os.path.exists(self.positions_file)
+            with open(self.positions_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow([
-                    'coin', 'size', 'entry_price', 'position_value', 
-                    'unrealized_pnl', 'leverage', 'margin_used', 'timestamp', 'human_time'
-                ])
+                if not file_exists:
+                    writer.writerow([
+                        'coin', 'size', 'entry_price', 'position_value', 
+                        'unrealized_pnl', 'leverage', 'margin_used', 'timestamp', 'human_time'
+                    ])
                 
-                for coin, positions in self.position_history.items():
-                    for pos in positions:
-                        writer.writerow([
-                            pos.coin, pos.size, pos.entry_price, pos.position_value,
-                            pos.unrealized_pnl, pos.leverage, pos.margin_used, 
-                            pos.timestamp, self._timestamp_to_human(pos.timestamp)
-                        ])
+                for pos in new_positions:
+                    writer.writerow([
+                        pos.coin, pos.size, pos.entry_price, pos.position_value,
+                        pos.unrealized_pnl, pos.leverage, pos.margin_used, 
+                        pos.timestamp, self._timestamp_to_human(pos.timestamp)
+                    ])
         except Exception as e:
-            logger.info(f"Warning: Failed to save positions history: {e}")
+            logger.error(f"Failed to save positions history: {e}")
     
     def _save_last_positions(self) -> None:
         """Save last positions to CSV"""
@@ -98,32 +102,35 @@ class PositionTracker:
                         pos.timestamp, self._timestamp_to_human(pos.timestamp)
                     ])
         except Exception as e:
-            logger.info(f"Warning: Failed to save last positions: {e}")
+            logger.error(f"Failed to save last positions: {e}")
     
-    def _save_changes_log(self) -> None:
-        """Save changes log to CSV"""
+    def _append_changes_log(self, new_changes: List[PositionChange]) -> None:
+        """Append new changes to CSV"""
+        if not new_changes:
+            return
+
         try:
-            with open(self.changes_file, 'w', newline='', encoding='utf-8') as f:
+            file_exists = os.path.exists(self.changes_file)
+            with open(self.changes_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow([
-                    'coin', 'change_type', 'old_size', 'new_size', 
-                    'old_position_value', 'new_position_value', 'timestamp', 'human_time'
-                ])
+                if not file_exists:
+                    writer.writerow([
+                        'coin', 'change_type', 'old_size', 'new_size', 
+                        'old_position_value', 'new_position_value', 'timestamp', 'human_time'
+                    ])
                 
-                for change in self.changes_log:
+                for change in new_changes:
                     writer.writerow([
                         change.coin, change.change_type, change.old_size or '', change.new_size,
                         change.old_position_value or '', change.new_position_value, 
                         change.timestamp, change.human_time
                     ])
         except Exception as e:
-            logger.info(f"Warning: Failed to save changes log: {e}")
+            logger.error(f"Failed to save changes log: {e}")
     
     def _save_data(self) -> None:
-        """Save all tracking data to CSV files"""
-        self._save_positions_history()
+        """Save snapshot data to CSV files (History and Logs are now appended)"""
         self._save_last_positions()
-        self._save_changes_log()
     
     def _load_positions_history(self) -> None:
         """Load position history from CSV"""
@@ -153,7 +160,7 @@ class PositionTracker:
                     self.position_history[coin].append(pos)
                     
         except Exception as e:
-            logger.info(f"Warning: Failed to load position history: {e}")
+            logger.warning(f"Failed to load position history: {e}")
     
     def _load_last_positions(self) -> None:
         """Load last positions from CSV"""
@@ -180,7 +187,7 @@ class PositionTracker:
                     self.last_positions[coin] = pos
                     
         except Exception as e:
-            logger.info(f"Warning: Failed to load last positions: {e}")
+            logger.warning(f"Failed to load last positions: {e}")
     
     def _load_changes_log(self) -> None:
         """Load changes log from CSV"""
@@ -209,7 +216,7 @@ class PositionTracker:
                     self.changes_log.append(change)
                     
         except Exception as e:
-            logger.info(f"Warning: Failed to load changes log: {e}")
+            logger.warning(f"Failed to load changes log: {e}")
     
     def _load_data(self) -> None:
         """Load all tracking data from CSV files"""
@@ -290,10 +297,23 @@ class PositionTracker:
                 
         return positions
     
-    def _detect_changes(self, current_positions: Dict[str, PositionSnapshot]) -> List[PositionChange]:
-        """Detect changes between current and last positions"""
+    def _detect_changes(self, current_positions: Dict[str, PositionSnapshot],
+                        payload_time: Optional[int] = None) -> List[PositionChange]:
+        """Detect changes between current and last positions.
+
+        payload_time is the server-provided timestamp (ms) from the source payload.
+        It is used as the canonical timestamp so that close-all events (where
+        current_positions is empty) still get the correct time, not now().
+        """
         changes = []
-        timestamp = list(current_positions.values())[0].timestamp if current_positions else int(datetime.now().timestamp() * 1000)
+        if payload_time is not None:
+            timestamp = int(payload_time)
+        elif current_positions:
+            timestamp = list(current_positions.values())[0].timestamp
+        elif self.last_positions:
+            timestamp = list(self.last_positions.values())[0].timestamp
+        else:
+            timestamp = int(datetime.now().timestamp() * 1000)
         human_time = self._timestamp_to_human(timestamp)
         
         # Check for closed positions
@@ -394,13 +414,16 @@ class PositionTracker:
         """
         # Extract current positions
         current_positions = self._extract_positions(position_data)
-        
-        # Detect changes
-        changes = self._detect_changes(current_positions)
+
+        # Detect changes (thread the payload's server-side timestamp through so
+        # close-all events still use the right time rather than now()).
+        changes = self._detect_changes(current_positions, payload_time=position_data.get('time'))
         
         # Only update history if there are actual position changes (not just P&L updates)
         if changes:
             timestamp = position_data.get('time', int(datetime.now().timestamp() * 1000))
+            new_history_items = []
+            
             for coin, position in current_positions.items():
                 if coin not in self.position_history:
                     self.position_history[coin] = []
@@ -416,14 +439,20 @@ class PositionTracker:
                 
                 if should_add_to_history:
                     self.position_history[coin].append(position)
+                    new_history_items.append(position)
+            
+            # Append new history items to file
+            if new_history_items:
+                self._append_positions_history(new_history_items)
         
         # Always log changes (even if empty for completeness)
         self.changes_log.extend(changes)
+        self._append_changes_log(changes)
         
         # Always update last positions (for tracking future changes)
         self.last_positions = deepcopy(current_positions)
         
-        # Save data to file after each update (but only if there were changes)
+        # Save snapshot data (last_positions)
         if changes:
             self._save_data()
         else:
@@ -551,6 +580,323 @@ class COPY_HL(IStrategy):
     adjustement_threshold = 10.0 # in %
     ADDRESS_TO_TRACK = ADDRESS_TO_TRACK_TOP
 
+    # State variables (do not touch)
+    copied_account_position_changes = None
+    current_positions_to_copy = None
+    my_open_positions = None
+    nb_loop = 1
+    _cached_perp_data = None
+    _cache_timestamp = None
+    _cache_duration = 5  # seconds
+    _is_cooldown_after_position_change = False
+    _cooldown_seconds_after_position_change = 100 # seconds
+    _time_of_change = None
+    _got_perp_data_account_state_successfully = False
+    matching_positions_check_output = None
+
+    # Optional order type mapping.
+    order_types = {
+        'entry': 'market',
+        'exit': 'market',
+        'stoploss': 'market',
+        'stoploss_on_exchange': False
+    }
+
+    # Optional order time in force.
+    order_time_in_force = {
+        'entry': 'gtc',
+        'exit': 'gtc'
+    }
+
+    def get_stake_total(self) -> float:
+        stake = self.config['stake_currency']     # e.g. "USDC"
+        return self.wallets.get_total(stake) 
+
+    def GET_PERP_ACCOUNT_STATUS(self, address):
+        """Get account status with caching and error handling"""
+        try:
+            # Use cached data if recent
+            current_time = time.time()
+            if (self._cached_perp_data is not None and 
+                self._cache_timestamp is not None and
+                current_time - self._cache_timestamp < self._cache_duration):
+                self._got_perp_data_account_state_successfully = True
+                return self._cached_perp_data
+
+            from hyperliquid.info import Info
+            from hyperliquid.utils import constants
+            info = Info(constants.MAINNET_API_URL, skip_ws=True)
+            perp_user_state = info.user_state(address)
+            
+            # Cache the result
+            self._cached_perp_data = perp_user_state
+            self._cache_timestamp = current_time
+
+            self._got_perp_data_account_state_successfully = True
+            
+            return perp_user_state
+        except Exception as e:
+            logger.error(f"Failed to get perp account status: {e}")
+            self._got_perp_data_account_state_successfully = False
+            # Return cached data if available, otherwise None
+            return self._cached_perp_data if self._cached_perp_data else None
+        
+    def is_symbol_whitelisted(self, symbol: str) -> bool:
+        """
+        Returns True if the given trading pair symbol is currently in the whitelist.
+        """
+        if not self.dp:
+            # If DataProvider isn't available (e.g., outside strategy context)
+            return False
+
+        # Retrieve current whitelist from DataProvider
+        current_list = self.dp.current_whitelist()
+        return symbol in current_list
+    
+    def check_print_positions_summary(self):
+        """
+        Print a nicely formatted summary of current positions, scale factor, and comparisons.
+
+        Returns:
+            list[dict]: For each matching position, a dict with:
+                - 'coin': str
+                - 'diff_pc': float  # % difference vs expected scaled value
+                - 'my_value': float # actual USD value of my position
+        """
+        matching_positions_output = []
+        self.wallets.update()
+
+        try:
+            logger.info("=" * 80)
+            logger.info("POSITIONS SUMMARY")
+            logger.info("=" * 80)
+            
+            # Account values and scale factor
+            perp_data = self.GET_PERP_ACCOUNT_STATUS(self.ADDRESS_TO_TRACK)
+            if perp_data:
+                copied_account_value = float(perp_data['marginSummary']['accountValue'])
+                if copied_account_value <= 0:
+                    logger.warning("Copied account value is 0; skipping summary.")
+                    return matching_positions_output
+                my_account_value = float(self.get_stake_total())
+                scale_factor = my_account_value / copied_account_value
+
+                logger.info(f"Copied Account Value: ${copied_account_value:,.2f}")
+                logger.info(f"My Account Value:    ${my_account_value:,.2f}")
+                logger.info(f"Scale Factor:        {scale_factor:.6f}x (inverted {1.0/scale_factor:.1f}x )")
+                logger.info("-" * 50)
+            else:
+                logger.info("No cached perp data available")
+                return matching_positions_output
+            
+            # Current positions to copy
+            logger.info("POSITIONS TO COPY:")
+            if self.current_positions_to_copy:
+                for coin, position in self.current_positions_to_copy.items():
+                    position_value = position.position_value
+                    size = float(position.size)
+                    ratio_pc = position_value / copied_account_value * 100.0
+                    position_type = "LONG" if size > 0 else "SHORT"
+                    scaled_value = position_value * scale_factor
+                    
+                    logger.info(f"  {coin:>8} | {position_type:>5} | Size: {size:>12.4f} | "
+                            f"Value: ${position_value:>10.2f} ({ratio_pc:>5.2f}%) | "
+                            f"Scaled: ${scaled_value:>10.2f}")
+            else:
+                logger.info("  No positions to copy")
+            
+            logger.info("-" * 50)
+            
+            # My current open positions
+            logger.info("MY OPEN POSITIONS:")
+            if self.my_open_positions:
+                for trade in self.my_open_positions:
+                    coin = trade.pair.replace("/USDC:USDC", "")
+                    ticker = self.dp.ticker(trade.pair)
+                    rate = ticker['last']
+                    position_value = trade.amount * rate
+                    stake_amount = trade.stake_amount
+                    ratio_pc = position_value / my_account_value * 100.0
+                    
+                    logger.info(f"  {coin:>8} | LONG  | Stake: ${stake_amount:>10.2f} | "
+                            f"Value: ${position_value:>10.2f} ({ratio_pc:>5.2f}%) | "
+                            f"Leverage: {trade.leverage}x")
+            else:
+                logger.info("  No open positions")
+            
+            logger.info("-" * 50)
+            
+            # Position matching analysis
+            logger.info("POSITION MATCHING ANALYSIS:")
+            if self.current_positions_to_copy and self.my_open_positions:
+                copied_coins = set(self.current_positions_to_copy.keys())
+                my_coins = set(trade.pair.replace("/USDC:USDC", "") for trade in self.my_open_positions)
+                
+                # Positions that match
+                matching = copied_coins.intersection(my_coins)
+                if matching:
+                    logger.info("  Matching positions:")
+                    for coin in matching:
+                        copied_pos = self.current_positions_to_copy[coin]
+                        my_trade = next(t for t in self.my_open_positions if t.pair.replace("/USDC:USDC", "") == coin)
+                        
+                        copied_value = copied_pos.position_value
+                        ticker = self.dp.ticker(my_trade.pair)
+                        rate = ticker['last']
+                        logger.info(f"amount of {my_trade.pair}: {my_trade.amount}")
+                        my_value = my_trade.amount * rate
+                        expected_value = copied_value * scale_factor
+                        diff_pc = ((my_value - expected_value) / expected_value * 100) if expected_value > 0 else 0.0
+                        
+                        logger.info(f"    {coin:>8} | Copied: ${copied_value:>8.2f} -> Expected: ${expected_value:>8.2f} | "
+                                f"Actual: ${my_value:>8.2f} | Diff: {diff_pc:>6.1f}%")
+                        
+                        matching_positions_output.append({
+                            "coin": coin,
+                            "diff_pc": float(diff_pc),
+                            "my_value": float(my_value)
+                        })
+                
+                # Positions I should have but don't
+                should_have = copied_coins - my_coins
+                if should_have:
+                    logger.info("  Missing positions (should open if in whitelist):")
+                    for coin in should_have:
+                        pos = self.current_positions_to_copy[coin]
+                        size = float(pos.size)
+                        position_type = "LONG" if size > 0 else "SHORT"
+
+                        # Skip if scaled position < 0.5% of my account
+                        expected_value = pos.position_value * scale_factor
+                        expected_ratio_pc_my = (expected_value / my_account_value * 100.0) if my_account_value > 0 else 0.0
+                        if expected_ratio_pc_my < 0.5:
+                            continue
+
+                        ratio_pc_copied = pos.position_value / copied_account_value * 100.0
+                        significant = "✓" if ratio_pc_copied >= self.change_threshold else "✗"
+
+                        if self.is_symbol_whitelisted(coin):
+                            in_wl = ', in whitelist'
+                        else:
+                            in_wl = ', not in whitelist'
+                        
+                        logger.info(
+                            f"    {coin:>8} | {position_type:>5} | Copied ${pos.position_value:>8.2f} "
+                            f"({ratio_pc_copied:>5.2f}% of copied) | "
+                            f"Expected scaled: ${expected_value:>8.2f} ({expected_ratio_pc_my:>5.2f}% of mine) {significant} {in_wl}"
+                        )
+                
+                # Positions I have but shouldn't
+                shouldnt_have = my_coins - copied_coins
+                if shouldnt_have:
+                    logger.info("  Extra positions (should close):")
+                    for coin in shouldnt_have:
+                        my_trade = next(t for t in self.my_open_positions if t.pair.replace("/USDC:USDC", "") == coin)
+                        ticker = self.dp.ticker(my_trade.pair)
+                        rate = ticker['last']
+                        my_value = trade.amount * rate
+                        logger.info(f"    {coin:>8} | LONG  | ${my_value:>8.2f}")
+            
+            logger.info("=" * 80)
+            return matching_positions_output
+
+        except Exception as e:
+            logger.error(f"Error in print_positions_summary: {e}")
+            return matching_positions_output
+
+    def bot_start(self, **kwargs) -> None:
+        """
+        Called only once after bot instantiation.
+        :param **kwargs: Ensure to keep this here so updates to this won't break your strategy.
+        """
+        # because in Live (real money, real account) the value returned by self.dp.ticker(trade.pair) or trade.amount takes some time (> 1 minute) to be refreshed, even if we call self.wallets.update()
+        if self.config["runmode"].value in ('live'):
+            self._cooldown_seconds_after_position_change = 120
+        elif self.config["runmode"].value in ('dry_run'):
+            self._cooldown_seconds_after_position_change = 5
+        
+        # Initialize tracker once
+        try:
+            here = Path(__file__).resolve().parent / 'position_data'
+            self.tracker = PositionTracker(data_dir=here)
+            logger.info("PositionTracker initialized successfully in bot_start")
+        except Exception as e:
+            logger.error(f"Failed to initialize PositionTracker in bot_start: {e}")
+            self.tracker = None
+
+    def bot_loop_start(self, current_time: datetime, **kwargs) -> None:
+        """
+        Called at the start of the bot iteration (one loop). For each loop, it will run populate_indicators on all pairs.
+        Might be used to perform pair-independent tasks
+        (e.g. gather some remote resource for comparison)
+        :param current_time: datetime object, containing the current datetime
+        :param **kwargs: Ensure to keep this here so updates to this won't break your strategy.
+        """
+
+        logger.info(f"Loop #{self.nb_loop}")
+        self.nb_loop += 1
+
+        try:
+            # Re-initialize tracker if it failed in bot_start or was lost
+            if not hasattr(self, 'tracker') or self.tracker is None:
+                here = Path(__file__).resolve().parent / 'position_data'
+                self.tracker = PositionTracker(data_dir=here)
+
+            perp_data = self.GET_PERP_ACCOUNT_STATUS(self.ADDRESS_TO_TRACK)
+            if perp_data is None:
+                logger.error("Failed to get perp data, using empty position changes")
+                self.copied_account_position_changes = []
+                self.current_positions_to_copy = {}
+            else:
+                self.copied_account_position_changes = self.tracker.track_positions(perp_data)
+                self.current_positions_to_copy = self.tracker._extract_positions(perp_data)
+                
+            logger.info(f"Position changes: {self.copied_account_position_changes}")
+            self.tracker.print_changes(self.copied_account_position_changes)
+
+            self.my_open_positions = Trade.get_trades_proxy(is_open=True)
+
+            logger.info("Current positions to copy:")
+            logger.info(self.current_positions_to_copy)
+            logger.info("My current positions:")
+            logger.info(self.my_open_positions)
+            
+        except Exception as e:
+            logger.error(f"Error in bot_loop_start: {e}")
+            # Initialize with safe defaults
+            self.copied_account_position_changes = []
+            self.current_positions_to_copy = {}
+            self.my_open_positions = []
+            self._got_perp_data_account_state_successfully = False
+
+        self.matching_positions_check_output = self.check_print_positions_summary()
+
+    def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+        coin_ticker = metadata['pair'].replace("/USDC:USDC", "")
+        df['signal'] = 2  # Default: do nothing
+
+        if not self._got_perp_data_account_state_successfully: # skip (do nothing) if API call to get perp data copied account state failed
+            return df
+        
+        perp_data = self.GET_PERP_ACCOUNT_STATUS(self.ADDRESS_TO_TRACK)
+
+        # Handle position changes
+        if self.copied_account_position_changes:
+            for chg in self.copied_account_position_changes:
+                if coin_ticker in chg.coin:
+                    copied_account_value = float(perp_data['marginSummary']['accountValue'])
+                    if copied_account_value <= 0:
+                        logger.warning(f"Copied account value is 0; no signal for {coin_ticker}.")
+                        return df
+                    position_value_in_copied_account = float(chg.new_position_value) # in USDC
+                    if float(chg.new_size)<0.0: # check if short, just in case
+                        logger.info(f"Ignoring entry on {coin_ticker} because it is a Short. This code is LONG ONLY.")
+                        return df
+                    ratio_pc = position_value_in_copied_account/copied_account_value*100.0
+                    # if it is a long open and if the size is significant
+                    if 'opened_long' == chg.change_type:
+                        if ratio_pc>self.change_threshold:
+                            df['signal'] = 1
                             return df
                         else:
                             logger.info(f"Not opening position on {coin_ticker} because position size in copied account is too small compared to the copied account equity ({ratio_pc:.2f} , less than 1%)")
@@ -568,7 +914,8 @@ class COPY_HL(IStrategy):
     def _check_missed_entry_or_exit(self, coin_ticker, df):
         """Helper method to check for missed positions"""
         try:
-            my_trades = Trade.get_trades_proxy(is_open=True)
+            # Use cached open positions from bot_loop_start
+            my_trades = self.my_open_positions if self.my_open_positions is not None else []
             my_current_opened_tickers = [tr.pair.replace("/USDC:USDC", "") for tr in my_trades]
             
             # Check for missed entries
@@ -604,8 +951,10 @@ class COPY_HL(IStrategy):
                 
             perp_data = self.GET_PERP_ACCOUNT_STATUS(self.ADDRESS_TO_TRACK)
             copied_account_value = float(perp_data['marginSummary']['accountValue'])
-            #logger.info(f"copied account value: {copied_account_value}")
-            min_threshold = copied_account_value / (100.0/self.change_threshold)  # 1% threshold
+            if copied_account_value <= 0:
+                logger.warning("Copied account value is 0; treating position as not significant.")
+                return False
+            min_threshold = copied_account_value / (100.0/self.change_threshold)  # 0.5% threshold
 
             position_value = self.current_positions_to_copy[coin_ticker].position_value
 
@@ -618,7 +967,8 @@ class COPY_HL(IStrategy):
         """
         """
         if coin_ticker in self.current_positions_to_copy:
-            my_trades = Trade.get_trades_proxy(is_open=True)
+            # Use cached open positions from bot_loop_start
+            my_trades = self.my_open_positions if self.my_open_positions is not None else []
             my_current_opened_tickers = [tr.pair.replace("/USDC:USDC", "") for tr in my_trades]
             if coin_ticker in my_current_opened_tickers:
                 is_short = float(self.current_positions_to_copy[coin_ticker].size) < 0.0
@@ -658,6 +1008,9 @@ class COPY_HL(IStrategy):
             
             perp_data = self.GET_PERP_ACCOUNT_STATUS(self.ADDRESS_TO_TRACK)
             copied_account_value = float(perp_data['marginSummary']['accountValue'])
+            if copied_account_value <= 0:
+                logger.warning(f"Copied account value is 0 for {pair}; skipping entry.")
+                return None
             my_account_value = float(self.get_stake_total())
             scale_factor = my_account_value / copied_account_value
 
@@ -735,6 +1088,9 @@ class COPY_HL(IStrategy):
             
             if self.copied_account_position_changes:
                 copied_account_value = float(perp_data['marginSummary']['accountValue'])
+                if copied_account_value <= 0:
+                    logger.warning(f"Copied account value is 0 for {trade.pair}; skipping adjustment.")
+                    return None
                 my_account_value = float(self.get_stake_total())
                 scale_factor = my_account_value / copied_account_value
 
@@ -755,7 +1111,9 @@ class COPY_HL(IStrategy):
                         if 'increased' in chg.change_type:
                             return delta_stake / trade.leverage - dust_USDC
                         elif 'decreased' in chg.change_type:
-                            return -1.0 * delta_stake / trade.leverage - dust_USDC
+                            # Negate the whole expression so dust is applied symmetrically:
+                            # |inc| and |dec| should be equal for a symmetric change.
+                            return -(delta_stake / trade.leverage - dust_USDC)
                     
             # for already opened positions, if difference with what it should be in copied account (and scaled) is too large (>10%), adjust to match
             if self.matching_positions_check_output:

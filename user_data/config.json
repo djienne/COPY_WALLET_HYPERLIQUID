@@ -105,13 +105,12 @@
         "listen_port": 8080,
         "verbosity": "info",
         "enable_openapi": false,
-        "Force_entry": true,
         "forcebuy_enable": true,
         "force_entry_enable": true,
-        "jwt_secret_key": "d1654caf3c530f6b037ae59a999d9d9328dec66bdd68799112cf1ba7d65276a3",
+        "jwt_secret_key": "1186554b0e7fa2b7f728aef4ab18e416ed2de1e479deab5c8088c2c025854598",
         "CORS_origins": [],
         "username": "ft",
-        "password": "kamala"
+        "password": "vJ3VbZV9HtrDnfj2WPMhp3YX"
     },
     "bot_name": "COPY_HL",
     "initial_state": "running",

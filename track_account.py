@@ -274,10 +274,21 @@ class PositionTracker:
                 
         return positions
     
-    def _detect_changes(self, current_positions: Dict[str, PositionSnapshot]) -> List[PositionChange]:
-        """Detect changes between current and last positions"""
+    def _detect_changes(self, current_positions: Dict[str, PositionSnapshot],
+                        payload_time: Optional[int] = None) -> List[PositionChange]:
+        """Detect changes between current and last positions.
+
+        payload_time is the server-provided timestamp (ms) from the source payload.
+        """
         changes = []
-        timestamp = list(current_positions.values())[0].timestamp if current_positions else int(datetime.now().timestamp() * 1000)
+        if payload_time is not None:
+            timestamp = int(payload_time)
+        elif current_positions:
+            timestamp = list(current_positions.values())[0].timestamp
+        elif self.last_positions:
+            timestamp = list(self.last_positions.values())[0].timestamp
+        else:
+            timestamp = int(datetime.now().timestamp() * 1000)
         human_time = self._timestamp_to_human(timestamp)
         
         # Check for closed positions
@@ -378,9 +389,9 @@ class PositionTracker:
         """
         # Extract current positions
         current_positions = self._extract_positions(position_data)
-        
-        # Detect changes
-        changes = self._detect_changes(current_positions)
+
+        # Detect changes using server-provided timestamp so close-all events are correct
+        changes = self._detect_changes(current_positions, payload_time=position_data.get('time'))
         
         # Only update history if there are actual position changes (not just P&L updates)
         if changes:
