@@ -110,7 +110,7 @@ class COPY_HL(IStrategy):
         self.tracker.print_changes(changes)
         self._changes = {c.coin: c for c in changes}
         self._positions = self.tracker.last_positions
-        self._copied_equity = float(state['marginSummary']['accountValue'])
+        self._copied_equity = state['equity']
         if self._copied_equity <= 0:
             logger.error(f"Copied wallet {self.address} has account value {self._copied_equity}. "
                          "Wrong address or empty wallet: not trading.")

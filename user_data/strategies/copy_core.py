@@ -7,11 +7,14 @@ Copy model: for every coin, hold
     my_position_value = copied_position_value * my_equity / copied_equity
 
 i.e. copy the trader's exposure ratio (position value / account value). Both
-equities are account values including unrealized PnL (Hyperliquid accountValue).
+equities include unrealized PnL. Copied equity is Hyperliquid's portfolio value,
+including spot assets; a unified account's perp accountValue is not its equity.
 """
 import csv
 import logging
+import math
 import os
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
@@ -29,7 +32,7 @@ CHANGE_FIELDS = ['coin', 'change_type', 'old_size', 'new_size',
 
 
 def fetch_user_state(address: str, timeout: float = 10.0) -> Dict[str, Any]:
-    """Perp clearinghouse state of `address` from the public Info endpoint (read-only).
+    """Perp positions and fresh portfolio equity from public Info endpoints (read-only).
 
     Raises on network error, HTTP error or unexpected payload, so callers can skip
     the loop instead of acting on bad data.
@@ -41,6 +44,19 @@ def fetch_user_state(address: str, timeout: float = 10.0) -> Dict[str, Any]:
     if (not isinstance(data, dict) or not isinstance(data.get("assetPositions"), list)
             or "accountValue" not in data.get("marginSummary", {})):
         raise ValueError(f"Unexpected clearinghouseState payload: {str(data)[:200]}")
+    resp = requests.post(HL_INFO_URL, json={"type": "portfolio", "user": address}, timeout=timeout)
+    resp.raise_for_status()
+    # Use the same denominator in every account mode. Do not add perp/spot balances:
+    # they overlap in unified accounts. 'day' also includes non-USDC spot assets.
+    try:
+        timestamp, value = dict(resp.json())["day"]["accountValueHistory"][-1]
+        data["equity"] = float(value)
+        age = time.time() - float(timestamp) / 1000.0
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        raise ValueError("Missing or invalid portfolio day equity point") from e
+    if not math.isfinite(data["equity"]) or not math.isfinite(age) or not -5 <= age <= 300:
+        raise ValueError("Portfolio equity is nonfinite or its timestamp is outside the freshness window")
+    logger.debug("Account snapshot fetched: portfolio equity %.2f, age %.1fs", data["equity"], age)
     return data
 
 

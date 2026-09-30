@@ -9,8 +9,8 @@ services:
     image: freqtradeorg/freqtrade:2025.7
     restart: unless-stopped
     container_name: COPY_HL
-    # Secrets and the copied address come from .env (git-ignored), see .env.example.
-    env_file: .env
+    # Secrets and the copied address come from hyperliquid.env (git-ignored), see hyperliquid.env.example.
+    env_file: hyperliquid.env
     volumes:
       - "./user_data:/freqtrade/user_data"
     # Expose api on port 8080 (localhost only)

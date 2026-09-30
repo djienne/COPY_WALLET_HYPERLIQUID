@@ -10,8 +10,10 @@ import logging
 import sys
 from pathlib import Path
 
+import requests
+
 sys.path.insert(0, str(Path(__file__).resolve().parent / "user_data" / "strategies"))
-from copy_core import PositionTracker, fetch_user_state  # noqa: E402
+from copy_core import HL_INFO_URL, PositionTracker, fetch_user_state  # noqa: E402
 
 
 def main():
@@ -22,8 +24,12 @@ def main():
 
     tracker = PositionTracker(data_dir=str(Path("position_data") / address))
     state = fetch_user_state(address)
-    equity = float(state["marginSummary"]["accountValue"])
-    print(f"Account value: ${equity:,.2f}")
+    equity = state["equity"]
+    response = requests.post(HL_INFO_URL, json={"type": "userAbstraction", "user": address}, timeout=10)
+    response.raise_for_status()
+    print(f"Account mode: {response.json()}")
+    print(f"Perp account value: ${float(state['marginSummary']['accountValue']):,.2f}")
+    print(f"Portfolio equity: ${equity:,.2f}")
     tracker.print_changes(tracker.track_positions(state))
 
     print("\n=== Current Positions ===")

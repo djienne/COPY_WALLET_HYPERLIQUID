@@ -47,6 +47,7 @@ def payload(t_ms, equity, **positions):
     return {
         "time": t_ms,
         "marginSummary": {"accountValue": str(equity)},
+        "equity": equity,
         "assetPositions": [
             {"type": "oneWay", "position": {
                 "coin": coin, "szi": str(size), "entryPx": str(px),
@@ -226,3 +227,21 @@ def test_fidelity_row_is_written(bot, monkeypatch):
     assert rows[0].startswith("time_utc")
     # target SOL 1000, mine 900; target BTC 5000, mine 0 -> (100 + 5000) / 1000
     assert rows[1].split(",")[3:] == ["5.1", "1", "0"]
+
+
+def test_portfolio_equity_and_one_fetch_per_loop(bot, monkeypatch):
+    state = payload(T0, 1_000_000, SOL=(1000, 100.0))
+    state['marginSummary']['accountValue'] = '0'  # unified wallet's main perp balance
+    calls = []
+
+    def fetch(address):
+        calls.append(address)
+        return state
+
+    monkeypatch.setattr(strat, 'fetch_user_state', fetch)
+    bot.bot_loop_start(datetime.now(timezone.utc))
+    assert bot._ok and bot._copied_equity == 1_000_000
+    assert signal(bot, 'SOL') == 1
+    stake = bot.custom_stake_amount('SOL/USDC:USDC', None, 100.0, 16, 5, 1e9, 3, None, 'long')
+    assert stake * 3 / 100.0 == pytest.approx(1.0)
+    assert calls == [ADDR]

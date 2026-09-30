@@ -30,7 +30,7 @@ This strategy monitors a specified Hyperliquid wallet address and replicates its
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `FREQTRADE__COPY_ADDRESS` (in `.env`) or `copy_address` (in `config.json`) | empty | Hyperliquid wallet address to copy. The bot does not trade until it is set and the wallet has a non-zero account value. |
+| `FREQTRADE__COPY_ADDRESS` (in `hyperliquid.env`) or `copy_address` (in `config.json`) | empty | Hyperliquid wallet address to copy. The bot does not trade until it is set and the wallet has a non-zero account value. |
 | `max_open_trades` (in `config.json`)| 4 | Maximum number of positions at a given time. Copied positions beyond this are not opened (they show up as "missing" in the fidelity log). |
 | `LEV` (in `COPY_HL.py`) | 3 | Leverage per position. It sets how much **margin** each position uses, not how much you copy: the exposure is copied from the trader. Margin is isolated, so a lower `LEV` puts liquidation further away (about −26…−32 % price move at 3x, −11…−16 % at 6x, depending on the coin). It must still be at least the trader's total long exposure / account value; the bot logs a warning when the margin does not fit. |
 | `change_threshold` (in `COPY_HL.py`)| 0.5 | Positions below this % of the copied account are not copied (exit only below half of it), and size changes below this % of your account are ignored |
@@ -40,9 +40,9 @@ Remark: `stake_amount` in `config.json` is ignored.
 
 ### Required Settings
 
-1. **Create `.env`** from the template and fill it in (it is git-ignored):
+1. **Create `hyperliquid.env`** from the template and fill it in (it is git-ignored):
 ```bash
-cp .env.example .env
+cp hyperliquid.env.example hyperliquid.env
 ```
 Set `FREQTRADE__COPY_ADDRESS` to the wallet you want to copy, and fresh values for the API password and JWT secret. You can check the positions of the copied wallet with e.g. https://apexliquid.bot/detail?address=<address>, or with `python track_account.py <address>`.
 
@@ -53,13 +53,14 @@ Set `FREQTRADE__COPY_ADDRESS` to the wallet you want to copy, and fresh values f
 ## How It Works
 
 ### Position Tracking
-1. **API Polling**: Fetches the copied wallet's state from the Hyperliquid Info endpoint once per loop (10 s timeout). If the fetch fails, the bot does nothing that loop.
+1. **API Polling**: Calls `fetch_user_state` once per loop: one `clearinghouseState` request and one `portfolio` request, each with a 10 s timeout. If either fetch fails or equity is stale, the bot does nothing that loop. The CLI also prints the account mode, perp balance, and portfolio equity.
 2. **Change Detection**: Compares current positions with the previous snapshot (logged to CSV, and used to time re-entries and resizes)
 3. **Signal Generation**: For each coin, compares the trader's holdings with yours: enter if the trader holds a significant long you don't have, exit if you hold something the trader no longer holds as a significant long
 4. The shared code lives in `user_data/strategies/copy_core.py`; `track_account.py` is a command-line viewer using the same tracker.
 
 ### Position Scaling
-- Scale factor: `My Account Value / Copied Account Value` (both including unrealized PnL)
+- Scale factor: `My Account Value / Copied Portfolio Equity`. The copied denominator is the last `day.accountValueHistory` point from Hyperliquid's `portfolio` endpoint, in every account mode. It includes spot assets and avoids using an incomplete perp balance for unified accounts. No perp/spot balance formula is inferred.
+- Missing or nonfinite portfolio values, points older than five minutes, and timestamps more than five seconds ahead of the local clock suppress copy actions for the loop. There is no fallback to the perp balance.
 - Target size in coins: `copied size × scale factor`
 - Only copies positions > 0.5 % of the copied account value
 
@@ -95,7 +96,7 @@ The strategy creates `user_data/strategies/position_data/<copied address>/` with
 1. **Install Dependencies**:
 `Docker`
 
-2. **Configure**: create `.env` (see Required Settings). Adjust `max_open_trades` (in `config.json`) and `LEV` (in `COPY_HL.py`) for the account to be copied.
+2. **Configure**: create `hyperliquid.env` (see Required Settings). Adjust `max_open_trades` (in `config.json`) and `LEV` (in `COPY_HL.py`) for the account to be copied.
 
 3. **Run Freqtrade**:
 ```bash
