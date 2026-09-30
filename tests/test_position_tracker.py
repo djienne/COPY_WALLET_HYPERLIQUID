@@ -1,18 +1,13 @@
 """
-Unit tests for PositionTracker. Read-only, no network, no credentials.
-
-We exercise the tracker that lives in `track_account.py` because importing
-the strategy file pulls in the full freqtrade runtime. The tracker in
-`track_account.py` is kept semantically equivalent to the one inside
-`user_data/strategies/COPY_HL.py` — if they diverge, these tests will not
-catch regressions in the strategy copy.
+Unit tests for PositionTracker (user_data/strategies/copy_core.py, the same code the
+strategy runs). Read-only, no network, no credentials.
 """
 import tempfile
 import shutil
 
 import pytest
 
-from track_account import PositionTracker, PositionSnapshot
+from copy_core import PositionTracker, PositionSnapshot
 
 
 def _mk_payload(time_ms, *positions):
@@ -173,3 +168,16 @@ def test_close_all_uses_payload_time_not_now(tracker):
     assert len(changes) == 1
     assert changes[0].change_type == "closed"
     assert changes[0].timestamp == server_time_ms
+
+
+def test_last_size_change_survives_restart(tmp_path):
+    """The re-entry block needs the trader's last size-change time per coin, also after
+    a bot restart. Leverage-only ('modified') changes do not count as a move."""
+    t1 = PositionTracker(data_dir=str(tmp_path))
+    t1.track_positions(_mk_payload(1_700_000_000_000, ("BTC", 0.5, 60000, 30000, 0, 5, 6000)))
+    t1.track_positions(_mk_payload(1_700_000_060_000, ("BTC", 0.7, 60000, 42000, 0, 5, 8400)))
+    t1.track_positions(_mk_payload(1_700_000_120_000, ("BTC", 0.7, 60000, 42000, 0, 10, 4200)))
+    assert t1.last_size_change_ms["BTC"] == 1_700_000_060_000
+    t2 = PositionTracker(data_dir=str(tmp_path))
+    assert t2.last_size_change_ms["BTC"] == 1_700_000_060_000
+    assert t2.track_positions(_mk_payload(1_700_000_180_000, ("BTC", 0.7, 60000, 42000, 0, 10, 4200))) == []

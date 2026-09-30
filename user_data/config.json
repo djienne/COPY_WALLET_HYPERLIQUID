@@ -1,13 +1,12 @@
 {
+    "copy_address": "",
     "max_open_trades": 4,
     "stake_currency": "USDC",
     "stake_amount": 16,
     "tradable_balance_ratio": 0.99,
     "amount_reserve_percent": 0.01,
-    "available_capital": 1000.0,
     "dry_run_wallet": 1000.0,
     "dry_run": true,
-    "fee": 0.001,
     "cancel_open_orders_on_exit": true,
     "trading_mode": "futures",
     "margin_mode": "isolated",
@@ -20,7 +19,7 @@
     "entry_pricing": {
         "price_side": "other",
         "use_order_book": true,
-        "order_book_top": 20,
+        "order_book_top": 1,
         "price_last_balance": 0.0,
         "check_depth_of_market": {
             "enabled": false,
@@ -30,12 +29,10 @@
     "exit_pricing": {
         "price_side": "other",
         "use_order_book": true,
-        "order_book_top": 20
+        "order_book_top": 1
     },
     "exchange": {
         "name": "hyperliquid",
-        "walletAddress": "",
-        "privateKey": "",
         "ccxt_config": {
             "options": {
                 "vaultAddress": ""
@@ -56,7 +53,6 @@
             "SOL/USDC:USDC",
             "HYPE/USDC:USDC",
             "BNB/USDC:USDC",
-            "MKR/USDC:USDC",
             "AAVE/USDC:USDC",
             "AVAX/USDC:USDC",
             "LTC/USDC:USDC",
@@ -73,11 +69,7 @@
     },
     "pairlists": [
         {
-            "method": "StaticPairList",
-            "number_assets": 16,
-            "sort_key": "quoteVolume",
-            "min_value": 100000,
-            "refresh_period": 1800
+            "method": "StaticPairList"
         }
     ],
     "edge": {
@@ -105,17 +97,13 @@
         "listen_port": 8080,
         "verbosity": "info",
         "enable_openapi": false,
-        "forcebuy_enable": true,
-        "force_entry_enable": true,
-        "jwt_secret_key": "1186554b0e7fa2b7f728aef4ab18e416ed2de1e479deab5c8088c2c025854598",
         "CORS_origins": [],
-        "username": "ft",
-        "password": "vJ3VbZV9HtrDnfj2WPMhp3YX"
+        "username": "ft"
     },
     "bot_name": "COPY_HL",
     "initial_state": "running",
-    "force_entry_enable": true,
     "internals": {
         "process_throttle_secs": 20
-    }
+    },
+    "force_entry_enable": true
 }

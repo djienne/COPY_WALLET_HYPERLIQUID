@@ -6,3 +6,6 @@ __pycache__
 .env
 venv/
 .venv/
+# Runtime state written by the bot and track_account.py
+position_data/
+user_data/strategies/position_data/

@@ -1,4 +1,3 @@
-version: '3'
 networks:
   default:
     driver: bridge
@@ -8,15 +7,10 @@ networks:
 services:
   freqtrade:
     image: freqtradeorg/freqtrade:2025.7
-    # image: freqtradeorg/freqtrade:develop
-    # Use plotting image
-    # image: freqtradeorg/freqtrade:develop_plot
-    # Build step - only needed when additional dependencies are needed
-    build:
-      context: .
-      dockerfile: "./Dockerfile.technical"
     restart: unless-stopped
     container_name: COPY_HL
+    # Secrets and the copied address come from .env (git-ignored), see .env.example.
+    env_file: .env
     volumes:
       - "./user_data:/freqtrade/user_data"
     # Expose api on port 8080 (localhost only)

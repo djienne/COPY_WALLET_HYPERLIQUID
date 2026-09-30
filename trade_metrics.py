@@ -221,8 +221,9 @@ def main():
             try:
                 with open(cfg_path, "r") as fh:
                     cfg = json.load(fh)
-                if isinstance(cfg, dict) and cfg.get("available_capital"):
-                    available_capital = float(cfg["available_capital"])
+                capital = cfg.get("available_capital") or cfg.get("dry_run_wallet") if isinstance(cfg, dict) else None
+                if isinstance(capital, (int, float)) and capital:
+                    available_capital = float(capital)
                     if args.start_equity is None:
                         args.start_equity = available_capital
             except Exception:
@@ -242,10 +243,15 @@ def main():
             open_positions_valued = int(open_unrealized.notna().sum())
             total_unrealized = float(open_unrealized.fillna(0.0).sum())
 
+    # Profit already taken by partial exits of still-open trades (not in closed P&L, and
+    # unrealized P&L only covers the remaining amount).
+    realized_open = float(df_open["realized_profit"].fillna(0.0).sum()) if "realized_profit" in df_open.columns else 0.0
+
     metrics["open_trades"] = int(len(df_open))
     metrics["open_trades_priced"] = int(open_positions_valued)
+    metrics["realized_pnl_open"] = realized_open
     metrics["unrealized_pnl_open"] = float(total_unrealized) if total_unrealized is not None else None
-    metrics["total_pnl_including_open"] = (metrics["total_pnl"] + total_unrealized) if total_unrealized is not None else None
+    metrics["total_pnl_including_open"] = (metrics["total_pnl"] + realized_open + total_unrealized) if total_unrealized is not None else None
 
     # starting capital
     if available_capital is not None:
@@ -278,6 +284,8 @@ def main():
     pnl = metrics.get("total_pnl", 0.0)
     pnl_key = "ok" if pnl >= 0 else "err"
     print(f"{_color('Total P&L (closed):', pnl_key, use_color)} {pnl}")
+
+    print(f"{_color('Realized P&L of open trades (partial exits):', 'dim', use_color)} {metrics['realized_pnl_open']}")
 
     if metrics.get("unrealized_pnl_open") is not None:
         u = metrics["unrealized_pnl_open"]
