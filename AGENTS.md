@@ -1,3 +1,9 @@
+# Branch policy
+
+Always work on the existing `main` or `master` branch. Do not create branches
+unless the user explicitly asks for one. Commit and push to `main`/`master` when
+requested, preserving any unrelated local changes and runtime data.
+
 # GitHub access on this PC
 
 This repository belongs to **djienne**. The working SSH key on this PC is

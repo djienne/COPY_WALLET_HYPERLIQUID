@@ -120,6 +120,12 @@ pytest -m network         # live read-only checks against Hyperliquid
 
 ## Monitoring
 
+Run `python show_PnL.py` on the Docker host to view matching Freqtrade containers
+(`CONTAINER_KEYWORD` defaults to `COPY`). It reads the API username and password
+from `hyperliquid.env` beside the script; process environment variables override
+the file. Matching containers must share that login. `PROFIT ALL` includes P&L
+from open trades, while `PROFIT CLOSED` includes only closed trades.
+
 ### Console Output
 Each loop logs:
 - Detected position changes of the copied wallet
