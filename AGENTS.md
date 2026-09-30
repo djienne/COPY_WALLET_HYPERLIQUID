@@ -1,13 +1,16 @@
 # GitHub access on this PC
 
-This repository belongs to **djienne**. Use the SSH host alias `github-djienne`
-from `~/.ssh/config`; it selects `~/.ssh/id_rsa2` for that GitHub account.
+This repository belongs to **djienne**. The working SSH key on this PC is
+`~/.ssh/id_rsa_reflechir`, verified on 2026-09-30. Git's `core.sshCommand` selects
+this key with `IdentitiesOnly=yes`.
 
-Push URL: `git@github-djienne:djienne/COPY_WALLET_HYPERLIQUID.git`.
+Push URL: `git@github.com:djienne/COPY_WALLET_HYPERLIQUID.git`.
 
-Verify the identity with `ssh -T git@github-djienne`: the greeting must say
+Verify with `ssh -i ~/.ssh/id_rsa_reflechir -o IdentitiesOnly=yes -T git@github.com`:
+the greeting must say
 `Hi djienne!` (GitHub's successful SSH identity check exits with status 1).
-The default HTTPS Git/gh account is `davsar89` and cannot push to this repository.
+The `github-djienne` SSH alias currently selects `id_rsa2`, which fails authentication;
+do not rely on its name. The default HTTPS Git/gh account is `davsar89` and cannot push here.
 Do not print or commit private keys, tokens, or `hyperliquid.env`.
 
 Preserve the local deployment and trading history when updating from upstream;
